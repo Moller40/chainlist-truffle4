@@ -5,9 +5,9 @@ contract ChainList {
   address seller;
   string name;
   string description;
-  uint256 price;
+  uint256 price; // in wai == eth^-18
 
-  // sell an article
+  // sell an article, calling this will cost gas
   function sellArticle(string _name, string _description, uint256 _price) public {
     seller = msg.sender;
     name = _name;
@@ -16,12 +16,14 @@ contract ChainList {
   }
 
   // get an article
+  // view --> free to call, only read
+  // pure --> free to call, can not modify or read state variables, usually used for util functions
   function getArticle() public view returns (
     address _seller,
     string _name,
     string _description,
-    uint256 _price
-  ) {
+    uint256 _price)
+  {
       return(seller, name, description, price);
   }
 }
