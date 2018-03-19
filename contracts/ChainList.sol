@@ -7,6 +7,11 @@ contract ChainList {
   string description;
   uint256 price; // in wai == eth^-18
 
+  // constructor
+  function ChainList() public {
+    sellArticle("Default article", "This is an article set by default", 1000000000000000000);
+  }
+
   // sell an article, calling this will cost gas
   function sellArticle(string _name, string _description, uint256 _price) public {
     seller = msg.sender;
