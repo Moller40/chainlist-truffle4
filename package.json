@@ -1,6 +1,6 @@
 {
-  "name": "chainskills",
-  "version": "1.0.0",
+  "name": "ChainList",
+  "version": "0.0.1",
   "description": "",
   "main": "truffle.js",
   "directories": {
