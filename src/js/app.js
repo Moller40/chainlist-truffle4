@@ -2,6 +2,7 @@ App = {
   web3Provider: null,
   contracts: {},
   account: 0x0,
+  loading: false,
 
   init: function() {
     return App.initWeb3();
@@ -24,7 +25,7 @@ App = {
   },
 
   displayAccountInfo: function() {
-    web3.eth.getCoinbase(function(err, account) {
+    web3.eth.getCoinbase(function(err, account) { // will return selected metamask account
       if(err === null) {
         App.account = account;
         $('#account').text(account);
@@ -43,43 +44,69 @@ App = {
       App.contracts.ChainList = TruffleContract(chainListArtifact);
       // set the provider for our contracts
       App.contracts.ChainList.setProvider(App.web3Provider);
+      // listen to events, will do App.reloadArticles() when new event
+      App.listenToEvents();
       // retrieve the article from the contract
       return App.reloadArticles();
     });
   },
 
   reloadArticles: function() {
+    // avoid reentry, extra safety only, with right logic not needed
+    if(App.loading) {
+      return;
+    }
+    App.loading = true;
+
     // refresh account information because the balance might have changed
     App.displayAccountInfo();
 
-    // retrieve the article placeholder and clear it
-    $('#articlesRow').empty();
+    var chainListInstance;
 
     App.contracts.ChainList.deployed().then(function(instance) {
-      return instance.getArticle();
-    }).then(function(article) {
-      if(article[0] == 0x0) {
-        // no article
-        return;
+      chainListInstance = instance;
+      return chainListInstance.getArticlesForSale();
+    }).then(function(articleIds) {
+      // retrieve the article placeholder and clear it
+      $('#articlesRow').empty();
+
+      for(var i = 0; i < articleIds.length; i++) {
+        var articleId = articleIds[i];
+        // yes, toNumber() needed to avoid problems sometimes
+        chainListInstance.articles(articleId.toNumber()).then(function(article){
+          App.displayArticle(article[0], article[1], article[3], article[4], article[5]);
+        });
       }
-
-      // retrieve the article template and fill it
-      var articleTemplate = $('#articleTemplate');
-      articleTemplate.find('.panel-title').text(article[1]);
-      articleTemplate.find('.article-description').text(article[2]);
-      articleTemplate.find('.article-price').text(web3.fromWei(article[3], "ether"));
-
-      var seller = article[0];
-      if (seller == App.account) {
-        seller = "You";
-      }
-      articleTemplate.find('.article-seller').text(seller);
-
-      // add this article
-      $('#articlesRow').append(articleTemplate.html());
+      App.loading = false;
     }).catch(function(err) {
       console.error(err.message);
+      App.loading = false;
     });
+  },
+
+  displayArticle: function(id, seller, name, description, price) {
+    var articlesRow = $('#articlesRow');
+
+    var etherPrice = web3.fromWei(price, "ether");
+
+    var articleTemplate = $("#articleTemplate");
+    articleTemplate.find('.panel-title').text(name);
+    articleTemplate.find('.article-description').text(description);
+    articleTemplate.find('.article-price').text(etherPrice + " ETH");
+    articleTemplate.find('.btn-buy').attr('data-id', id);
+    articleTemplate.find('.btn-buy').attr('data-value', etherPrice);
+
+    // seller
+    if (seller == App.account) {
+      articleTemplate.find('.article-seller').text("You");
+      articleTemplate.find('.btn-buy').hide();
+    } else {
+      articleTemplate.find('.article-seller').text(seller);
+      articleTemplate.find('.btn-buy').show();
+    }
+
+    // add this new article
+    articlesRow.append(articleTemplate.html());
   },
 
   sellArticle: function() {
@@ -99,11 +126,54 @@ App = {
         gas: 500000
       });
     }).then(function(result) {
-      App.reloadArticles();
+      // Not needed when we have the listenToEvents function
+      // App.reloadArticles();
     }).catch(function(err) {
       console.error(err);
     });
   },
+
+  // listen to events triggered by the contract
+  listenToEvents: function() {
+    App.contracts.ChainList.deployed().then(function(instance) {
+      instance.LogSellArticle({}, {}).watch(function(error, event) {
+        if (!error) {
+          $("#events").append('<li class="list-group-item">' + event.args._name + ' is now for sale</li>');
+        } else {
+          console.error(error);
+        }
+        App.reloadArticles();
+      });
+
+      // Update webpage if article get bought
+      instance.LogBuyArticle({}, {}).watch(function(error, event) {
+        if (!error) {
+          $("#events").append('<li class="list-group-item">' + event.args._buyer + ' bought ' + event.args._name + '</li>');
+        } else {
+          console.error(error);
+        }
+        App.reloadArticles();
+      });
+    });
+  },
+
+  buyArticle: function(event) {
+    event.preventDefault(); // Small trick to avoid an issue. Not sure what....
+
+    // retrieve the article price
+    var _articleId = $(event.target).data('id');
+    var _price = parseFloat($(event.target).data('value'));
+
+    App.contracts.ChainList.deployed().then(function(instance){
+      return instance.buyArticle(_articleId, {
+        from: App.account,
+        value: web3.toWei(_price, "ether"),
+        gas: 500000
+      });
+    }).catch(function(error) {
+      console.error(error);
+    });
+  }
 };
 
 $(function() {
